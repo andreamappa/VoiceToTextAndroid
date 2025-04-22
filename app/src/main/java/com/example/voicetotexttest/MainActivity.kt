@@ -41,7 +41,7 @@ import io.grpc.Metadata
 
 private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 private const val REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION = 112
-private const val API_KEY = "AIzaSyD4EnDoZRQ25ZpQk-_JzOrX4HfePGBjvjU" // Sostituisci con la tua chiave API
+private const val API_KEY = "" // Sostituisci con la tua chiave API
 private const val LOG_FILE_NAME = "voice_to_text_log.txt"
 private const val LOG_SUBDIRECTORY = "VoiceToTextLogs" // Sottodirectory per i log
 
