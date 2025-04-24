@@ -35,17 +35,20 @@ import kotlinx.coroutines.withContext
 import com.google.longrunning.OperationsGrpc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
+import android.widget.ProgressBar
+import android.view.View
 
 
 //private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 private const val REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION = 112
 private const val REQUEST_AUDIO_PICK = 101 // Puoi usare 100 se non è già definito
-private const val API_KEY = "" // Sostituisci con la tua chiave API
+private const val API_KEY = BuildConfig.SPEECH_TO_TEXT_API_KEY
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var transcriptionTextView: TextView
     private lateinit var recordButton: Button
+    private lateinit var progressBar: ProgressBar
     private lateinit var mainChannel: io.grpc.ManagedChannel
     private var audioUri: Uri? = null
     private var currentOperationName: String? = null
@@ -67,13 +70,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         transcriptionTextView = findViewById(R.id.transcriptionTextView)
-        transcriptionTextView.text = "Condividi un messaggio audio da WhatsApp per vederlo trascritto." // Imposta il messaggio iniziale
+        transcriptionTextView.text = "Condividi un messaggio audio da WhatsApp per vederlo trascritto."
 
-        recordButton = findViewById(R.id.recordButton) // Inizializza recordButton
-        recordButton.text = "Seleziona File Audio" // Cambia il testo del pulsante
+        recordButton = findViewById(R.id.selectAudioButton) // Cambia l'ID per corrispondere al nuovo layout
+        recordButton.text = "Seleziona File Audio"
         recordButton.setOnClickListener {
             openAudioChooser()
         }
+
+        progressBar = findViewById(R.id.progressBar) // Ottieni il riferimento alla ProgressBar
 
         handleSharedIntent()
         Log.i("MainActivity", "onCreate completato.")
@@ -168,19 +173,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun transcribeAudioFile(uri: Uri) {
-        Log.i("Transcription", "transcribeAudioFile chiamato con URI (condiviso): $uri.")
-        transcriptionTextView.text = "Operazione in corso..." // Pulisci e mostra il messaggio
+        Log.i("Transcription", "transcribeAudioFile chiamato con URI: $uri")
+        transcriptionTextView.text = "Elaborazione in corso..."
+        progressBar.visibility = View.VISIBLE // Mostra la ProgressBar
+
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val inputStream = contentResolver.openInputStream(uri)
-                inputStream?.use {
-                    val audioData = it.readBytes()
-                    Log.i("AudioInfo", "Dimensione dei byte audio letti dal flusso condiviso: ${audioData.size}")
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val audioData = inputStream.readBytes()
+                    Log.i("AudioInfo", "Dimensione dei byte audio letti: ${audioData.size}")
 
                     val mimeType = contentResolver.getType(uri)
-                    Log.i("AudioInfo", "MIME Type del file condiviso: $mimeType")
+                    Log.i("AudioInfo", "MIME Type: $mimeType")
                     val fileExtension = uri.path?.substringAfterLast(".")?.toLowerCase(Locale.ROOT)
-                    Log.i("AudioInfo", "Estensione del file (dedotta dall'URI): $fileExtension")
+                    Log.i("AudioInfo", "Estensione del file: $fileExtension")
 
                     val encoding = getEncodingFromMimeType(mimeType, fileExtension)
                     val sampleRateHertz = getSampleRateFromMimeType(mimeType, fileExtension)
@@ -192,7 +198,7 @@ class MainActivity : AppCompatActivity() {
                         mainChannel = ManagedChannelBuilder.forAddress("speech.googleapis.com", 443)
                             .useTransportSecurity()
                             .build()
-                        Log.w("GrpcChannel", "Warning: mainChannel non era inizializzato, inizializzato ora in transcribeAudioFile.")
+                        Log.w("GrpcChannel", "Warning: mainChannel non inizializzato, creato in transcribeAudioFile.")
                     }
 
                     val stub = SpeechGrpc.newBlockingStub(mainChannel)
@@ -203,18 +209,17 @@ class MainActivity : AppCompatActivity() {
                                 applier: CallCredentials.MetadataApplier
                             ) {
                                 val metadata = io.grpc.Metadata()
-                                val apiKeyMetadataKey = io.grpc.Metadata.Key.of(
-                                    "x-goog-api-key",
-                                    io.grpc.Metadata.ASCII_STRING_MARSHALLER
+                                metadata.put(
+                                    io.grpc.Metadata.Key.of("x-goog-api-key", io.grpc.Metadata.ASCII_STRING_MARSHALLER),
+                                    API_KEY
                                 )
-                                metadata.put(apiKeyMetadataKey, API_KEY)
                                 applier.apply(metadata)
-                                Log.i("GrpcCredentials", "Credenziali API applicate alla metadata.")
+                                Log.i("GrpcCredentials", "Credenziali API applicate.")
                             }
 
                             override fun thisUsesUnstableApi() {}
                         })
-                    Log.i("GrpcStub", "transcribeAudioFile: Stub gRPC creato.")
+                    Log.i("GrpcStub", "Stub gRPC creato.")
 
                     val config = RecognitionConfig.newBuilder()
                         .setEncoding(encoding)
@@ -230,13 +235,13 @@ class MainActivity : AppCompatActivity() {
                     val audio = RecognitionAudio.newBuilder()
                         .setContent(ByteString.copyFrom(audioData))
                         .build()
-                    Log.i("AudioRequest", "transcribeAudioFile: RecognitionAudio creata.")
+                    Log.i("AudioRequest", "RecognitionAudio creata.")
 
                     val request = LongRunningRecognizeRequest.newBuilder()
                         .setConfig(config)
                         .setAudio(audio)
                         .build()
-                    Log.i("SpeechRequest", "LongRunningRecognizeRequest creata: $request")
+                    Log.i("SpeechRequest", "LongRunningRecognizeRequest creata.")
 
                     Log.i("SpeechApiCall", "Chiamata a stub.longRunningRecognize(request)")
                     val operation = stub.longRunningRecognize(request)
@@ -249,22 +254,25 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         Log.e("SpeechOperation", "Errore: Nome dell'operazione non valido.")
                         launch(Dispatchers.Main) {
-                            transcriptionTextView.text = "Errore durante l'avvio della trascrizione." // Mostra un messaggio di errore
+                            transcriptionTextView.text = "Errore durante l'avvio della trascrizione."
+                            progressBar.visibility = View.GONE // Nascondi la ProgressBar in caso di errore
                         }
                     }
                 } ?: run {
-                    Log.e("LongRunningRecognize", "Errore: Impossibile aprire InputStream per URI condiviso: $uri.")
+                    Log.e("LongRunningRecognize", "Errore: Impossibile aprire InputStream per URI: $uri")
                     launch(Dispatchers.Main) {
-                        transcriptionTextView.text = "Errore nella lettura del file audio." // Mostra un messaggio di errore
+                        transcriptionTextView.text = "Errore nella lettura del file audio."
+                        progressBar.visibility = View.GONE // Nascondi la ProgressBar in caso di errore
                     }
                 }
             } catch (e: IOException) {
-                Log.e("LongRunningRecognize", "Errore durante la lettura del file audio condiviso: ${e.localizedMessage}", e)
+                Log.e("LongRunningRecognize", "Errore durante la lettura del file audio: ${e.localizedMessage}", e)
                 launch(Dispatchers.Main) {
-                    transcriptionTextView.text = "Errore durante la lettura del file audio: ${e.localizedMessage}" // Mostra un messaggio di errore
+                    transcriptionTextView.text = "Errore durante la lettura del file audio: ${e.localizedMessage}"
+                    progressBar.visibility = View.GONE // Nascondi la ProgressBar in caso di errore
                 }
             } finally {
-                Log.i("Transcription", "transcribeAudioFile completato.")
+                Log.i("Transcription", "transcribeAudioFile completato (fuori coroutine).")
             }
         }
         Log.i("Transcription", "transcribeAudioFile completato (fuori coroutine).")
@@ -304,7 +312,7 @@ class MainActivity : AppCompatActivity() {
     private var isOperationFinished = false
 
     private suspend fun getOperationStatus(operationName: String, scope: CoroutineScope, sharedChannel: io.grpc.ManagedChannel?) {
-        Log.i("SpeechOperation", "getOperationStatus chiamato per: $operationName")
+        Log.i("SpeechOperation", "Avviato polling per l'operazione: $operationName")
         var isOperationFinished = false
         var retryCount = 0
         val maxRetries = 30
@@ -317,17 +325,21 @@ class MainActivity : AppCompatActivity() {
                     applier: CallCredentials.MetadataApplier
                 ) {
                     val metadata = io.grpc.Metadata()
-                    val apiKeyMetadataKey = io.grpc.Metadata.Key.of(
-                        "x-goog-api-key",
-                        io.grpc.Metadata.ASCII_STRING_MARSHALLER
+                    metadata.put(
+                        io.grpc.Metadata.Key.of("x-goog-api-key", io.grpc.Metadata.ASCII_STRING_MARSHALLER),
+                        API_KEY
                     )
-                    metadata.put(apiKeyMetadataKey, API_KEY)
                     applier.apply(metadata)
-                    Log.i("GrpcCredentials-Op", "Credenziali API applicate (Operation).")
+                    Log.i("GrpcCredentials-Op", "Credenziali API applicate (Operazione).")
                 }
 
                 override fun thisUsesUnstableApi() {}
             })
+
+        withContext(Dispatchers.Main) {
+            Log.d("ProgressBarVisibility", "Mostro ProgressBar all'inizio del polling.")
+            progressBar.visibility = View.VISIBLE
+        }
 
         while (!isOperationFinished && retryCount < maxRetries && scope.isActive) {
             try {
@@ -336,50 +348,65 @@ class MainActivity : AppCompatActivity() {
                     .build()
                 val operationResponse = operationsStub.getOperation(request)
 
+                Log.d("OperationStatus", "Operation Name: $operationName, Done: ${operationResponse.done}")
+
                 if (operationResponse.done) {
                     isOperationFinished = true
-                    if (operationResponse.hasError()) {
-                        val error = operationResponse.error
-                        Log.e("SpeechOperation", "Errore durante l'operazione ($operationName): ${error.message}")
-                        withContext(Dispatchers.Main) {
-                            transcriptionTextView.text = "Errore durante la trascrizione: ${error.message}"
-                        }
-                    } else {
-                        Log.i("OperationResponse", "Tipo di Any nella risposta: ${operationResponse.response.typeUrl}")
-                        try {
-                            val transcribeResponse = operationResponse.response.unpack(LongRunningRecognizeResponse::class.java)
-                            var finalTranscription = ""
-                            transcribeResponse.resultsList.forEach { result ->
-                                result.alternativesList.forEach { alternative ->
-                                    finalTranscription += alternative.transcript + " "
-                                    Log.i("TranscriptionResult", "Trascrizione finale ($operationName): ${alternative.transcript}")
+                    withContext(Dispatchers.Main) {
+                        Log.d("ProgressBarVisibility", "Imposto ProgressBar su GONE al completamento (done = true).")
+                        progressBar.visibility = View.GONE
+                        if (operationResponse.hasError()) {
+                            val error = operationResponse.error
+                            Log.e("SpeechOperation", "Errore nella trascrizione ($operationName): ${error.message}")
+                            transcriptionTextView.text = "Errore nella trascrizione: ${error.message}"
+                        } else {
+                            Log.i("OperationResponse", "Tipo di risposta (Any): ${operationResponse.response.typeUrl}")
+                            try {
+                                val transcribeResponse =
+                                    operationResponse.response.unpack(LongRunningRecognizeResponse::class.java)
+                                val finalTranscription = StringBuilder()
+                                transcribeResponse.resultsList.forEach { result ->
+                                    result.alternativesList.forEach { alternative ->
+                                        finalTranscription.append(alternative.transcript).append(" ")
+                                        Log.i(
+                                            "TranscriptionResult",
+                                            "Trascrizione parziale ($operationName): ${alternative.transcript}"
+                                        )
+                                    }
                                 }
-                            }
-                            val trimmedTranscription = finalTranscription.trim()
-                            if (trimmedTranscription.isNotEmpty()) {
-                                withContext(Dispatchers.Main) {
-                                    transcriptionTextView.text = trimmedTranscription // Mostra solo la trascrizione
-                                }
-                            } else {
-                                withContext(Dispatchers.Main) {
+                                val trimmedTranscription = finalTranscription.trim()
+                                if (trimmedTranscription.isNotEmpty()) {
+                                    transcriptionTextView.text = trimmedTranscription
+                                } else {
                                     transcriptionTextView.text = "Nessuna trascrizione rilevata."
                                 }
-                            }
-                        } catch (e: Exception) {
-                            Log.e("SpeechOperation", "Errore durante l'unpacking della risposta: ${e.localizedMessage}", e)
-                            withContext(Dispatchers.Main) {
+                            } catch (e: Exception) {
+                                Log.e(
+                                    "SpeechOperation",
+                                    "Errore durante l'estrazione della risposta ($operationName): ${e.localizedMessage}",
+                                    e
+                                )
                                 transcriptionTextView.text = "Errore nell'elaborazione della trascrizione."
                             }
                         }
                     }
                 } else {
-                    Log.i("SpeechOperation", "Operazione ($operationName) non ancora completata. In attesa di 2 secondi (tentativo ${retryCount + 1}).")
+                    Log.i(
+                        "SpeechOperation",
+                        "Operazione ($operationName) in corso. Attendo 2 secondi (tentativo ${retryCount + 1})."
+                    )
                     delay(2000)
                     retryCount++
                 }
             } catch (e: Exception) {
-                Log.e("SpeechOperation", "Errore durante il polling dell'operazione ($operationName): ${e.localizedMessage}. Tentativo ${retryCount + 1}", e)
+                Log.e(
+                    "SpeechOperation",
+                    "Errore durante il polling ($operationName), tentativo ${retryCount + 1}: ${e.localizedMessage}",
+                    e
+                )
                 withContext(Dispatchers.Main) {
+                    Log.d("ProgressBarVisibility", "Imposto ProgressBar su GONE in caso di errore di polling.")
+                    progressBar.visibility = View.GONE
                     transcriptionTextView.text = "Errore di comunicazione con il servizio di trascrizione."
                 }
                 delay(2000)
@@ -388,8 +415,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!isOperationFinished) {
-            Log.w("SpeechOperation", "Timeout o numero massimo di tentativi raggiunto per l'operazione: $operationName")
+            Log.w("SpeechOperation", "Timeout raggiunto per l'operazione: $operationName")
             withContext(Dispatchers.Main) {
+                Log.d("ProgressBarVisibility", "Imposto ProgressBar su GONE in caso di timeout.")
+                progressBar.visibility = View.GONE
                 transcriptionTextView.text = "Timeout durante la trascrizione."
             }
         }

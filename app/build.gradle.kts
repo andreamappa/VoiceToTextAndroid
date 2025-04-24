@@ -1,9 +1,3 @@
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-}
-
 android {
     namespace = "com.example.voicetotexttest"
     compileSdk = 35
@@ -16,6 +10,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SPEECH_TO_TEXT_API_KEY", project.properties["SPEECH_TO_TEXT_API_KEY"] as? String ?: "")
     }
 
     buildTypes {
@@ -57,7 +52,7 @@ dependencies {
     implementation("io.grpc:grpc-stub:1.57.2")
     implementation("io.grpc:grpc-api:1.57.2") // Aggiungi anche grpc-api
     implementation("io.grpc:grpc-context:1.57.2") // Forza esplicitamente la versione di grpc-context
-
+    implementation ("com.google.android.material:material:1.11.0") // Usa la versione più recente disponibile
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -77,4 +72,12 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.kotlin.coroutines.android)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation("androidx.cardview:cardview:1.0.0")
+
 }
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+

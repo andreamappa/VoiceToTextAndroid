@@ -7,4 +7,11 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <color name="whatsapp_primary">#075E54</color>
+    <color name="whatsapp_primary_dark">#054D44</color>
+    <color name="whatsapp_background">#ECE5DD</color>
+    <color name="whatsapp_accent">#25D366</color>
+    <color name="whatsapp_text_primary">#263238</color>
+    <color name="whatsapp_text_secondary">#66757F</color>
 </resources>
