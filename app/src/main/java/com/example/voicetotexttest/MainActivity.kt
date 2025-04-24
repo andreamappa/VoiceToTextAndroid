@@ -54,6 +54,14 @@ class MainActivity : AppCompatActivity() {
     private var writePermission = arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     //private var mainChannel: io.grpc.ManagedChannel? = null
 
+    override fun onStart() {
+        super.onStart()
+        Log.i("Permissions", "onStart chiamato.")
+        transcriptionTextView.append("\nonStart chiamato.")
+        // In questo approccio, la richiesta di archiviazione è in onCreate
+        // Potremmo comunque fare qui controlli o ulteriori azioni legate al permesso
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -62,9 +70,6 @@ class MainActivity : AppCompatActivity() {
         recordButton = findViewById(R.id.recordButton)
         transcriptionTextView.textSize = 14f
         transcriptionTextView.text = "Applicazione avviata."
-
-        ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION)
-        ActivityCompat.requestPermissions(this, writePermission, REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION)
 
         recordButton.setOnClickListener {
             Log.i("MainActivity", "Button record premuto (funzionalità locale disabilitata).")
@@ -83,16 +88,25 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
-            REQUEST_RECORD_AUDIO_PERMISSION -> {
-                permissionToRecordAccepted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-                Log.i("Permissions", "onRequestPermissionsResult (Audio): $requestCode, ${Arrays.toString(grantResults)}. Permesso accettato: $permissionToRecordAccepted.")
-                transcriptionTextView.append("\nonRequestPermissionsResult (Audio): $requestCode, ${Arrays.toString(grantResults)}. Permesso accettato: $permissionToRecordAccepted.")
-                if (!permissionToRecordAccepted) finish()
-            }
             REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION -> {
-                permissionToWriteAccepted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-                Log.i("Permissions", "onRequestPermissionsResult (Storage): $requestCode, ${Arrays.toString(grantResults)}. Permesso accettato: $permissionToWriteAccepted.")
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    permissionToWriteAccepted = true
+                    Log.i("Permissions", "onRequestPermissionsResult (Storage): Permesso di archiviazione concesso.")
+                    transcriptionTextView.append("\nonRequestPermissionsResult (Storage): Permesso di archiviazione concesso.")
+                    // Se il permesso è concesso ORA, e avevamo un URI condiviso, riprendi la trascrizione
+                    intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
+                        Log.i("Permissions", "Rilevato URI in onRequestPermissionsResult, riprendo la trascrizione per: $uri")
+                        transcriptionTextView.append("\nLog: Rilevato URI, riprendo la trascrizione.")
+                        transcribeAudioFile(uri)
+                    }
+                } else {
+                    permissionToWriteAccepted = false
+                    Log.w("Permissions", "onRequestPermissionsResult (Storage): Permesso di archiviazione negato.");
+                    transcriptionTextView.append("\nonRequestPermissionsResult (Storage): Permesso di archiviazione negato.");
+                    // Potresti voler informare l'utente che la condivisione audio potrebbe non funzionare
+                }
             }
+            // Abbiamo rimosso la gestione del permesso audio per questo test
         }
     }
 
@@ -105,79 +119,83 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSharedIntent() {
-        when (intent?.action) {
-            Intent.ACTION_SEND -> {
-                if ("audio/*" == intent.type || "audio/ogg" == intent.type) {
-                    val audioUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                    audioUri?.let { uri ->
-                        Log.i("IntentHandling", "File audio condiviso rilevato. URI: $uri.")
-                        transcriptionTextView.append("\nFile audio condiviso rilevato. URI: $uri.")
-                        Log.i("Transcription", "Avvio trascrizione lunga con Google Cloud per: $uri.")
-                        transcriptionTextView.append("\nAvvio trascrizione lunga con Google Cloud per: $uri.")
+        val intent = intent
+        val action = intent?.action
+        val type = intent?.type
 
-                        // Inizializza mainChannel qui se non è già stato fatto
-                        if (!::mainChannel.isInitialized) {
-                            mainChannel = ManagedChannelBuilder.forAddress("speech.googleapis.com", 443)
-                                .useTransportSecurity()
-                                .build()
-                            Log.i("GrpcChannel", "mainChannel inizializzato in handleSharedIntent.")
-                            transcriptionTextView.append("\nLog: mainChannel inizializzato in handleSharedIntent.")
-                        }
+        Log.i("IntentHandling", "handleSharedIntent() chiamato. Action: $action, Type: $type")
 
-                        transcribeAudioFile(uri)
+        if (action == Intent.ACTION_SEND) {
+            if (type?.startsWith("audio/") == true) {
+                val audioUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                if (audioUri != null) {
+                    Log.i("IntentHandling", "File audio condiviso rilevato. URI: $audioUri.")
+                    Log.i("Transcription", "Avvio trascrizione lunga con Google Cloud per URI condiviso: $audioUri.")
+                    // Inizializza mainChannel qui se non è già stato fatto
+                    if (!::mainChannel.isInitialized) {
+                        mainChannel = ManagedChannelBuilder.forAddress("speech.googleapis.com", 443)
+                            .useTransportSecurity()
+                            .build()
+                        Log.i("GrpcChannel", "mainChannel inizializzato in handleSharedIntent.")
                     }
+                    transcribeAudioFile(audioUri)
                 }
+            } else {
+                Log.i("IntentHandling", "Tipo di intent non supportato: $type")
+                transcriptionTextView.append("\nLog: Tipo di intent non supportato: $type")
             }
+        } else if (action == Intent.ACTION_MAIN && type == null) {
+            Log.i("IntentHandling", "Azione dell'intent non gestita: $action")
+            transcriptionTextView.append("\nLog: Azione dell'intent non gestita: $action")
         }
     }
     private fun transcribeAudioFile(uri: Uri) {
-        Log.i("Transcription", "transcribeAudioFile chiamato con URI: $uri.")
-        transcriptionTextView.append("\ntranscribeAudioFile chiamato con URI: $uri.")
-        Log.i("GrpcChannel", "Stato di mainChannel all'inizio di transcribeAudioFile: $mainChannel")
-        transcriptionTextView.append("\nLog: Stato di mainChannel all'inizio di transcribeAudioFile: $mainChannel")
-
-        lifecycleScope.launch(Dispatchers.Main) {
-            Log.i("Coroutine", "lifecycleScope.launch (Dispatchers.Main) iniziato.")
-            transcriptionTextView.append("\nlifecycleScope.launch (Dispatchers.Main) iniziato.")
+        Log.i("Transcription", "transcribeAudioFile chiamato con URI (condiviso): $uri.")
+        transcriptionTextView.append("\ntranscribeAudioFile chiamato con URI (condiviso): $uri.")
+        lifecycleScope.launch(Dispatchers.IO) { // Esegui l'operazione di I/O in un dispatcher appropriato
             try {
-                Log.i("FileAccess", "transcribeAudioFile: Tentativo di aprire InputStream per URI: $uri.")
-                transcriptionTextView.append("\ntranscribeAudioFile: Tentativo di aprire InputStream per URI: $uri.")
                 val inputStream = contentResolver.openInputStream(uri)
-                if (inputStream == null) {
-                    launch(Dispatchers.Main) {
-                        Log.e("LongRunningRecognize", "Errore: Impossibile aprire InputStream per URI: $uri.")
-                        transcriptionTextView.append("\nErrore: Impossibile aprire InputStream per URI: $uri.")
-                    }
-                    return@launch
-                }
-
-                inputStream.use {
+                inputStream?.use {
                     val audioData = it.readBytes()
-                    Log.i("AudioInfo", "Dimensione dei byte audio letti: ${audioData.size}")
-                    transcriptionTextView.append("\nLog: Dimensione dei byte audio letti: ${audioData.size}")
+                    Log.i("AudioInfo", "Dimensione dei byte audio letti dal flusso condiviso: ${audioData.size}")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Dimensione dei byte audio letti dal flusso condiviso: ${audioData.size}")
+                    }
 
                     val mimeType = contentResolver.getType(uri)
                     Log.i("AudioInfo", "MIME Type del file condiviso: $mimeType")
-                    transcriptionTextView.append("\nLog: MIME Type del file condiviso: $mimeType")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: MIME Type del file condiviso: $mimeType")
+                    }
                     val fileExtension = uri.path?.substringAfterLast(".")?.toLowerCase(Locale.ROOT)
                     Log.i("AudioInfo", "Estensione del file (dedotta dall'URI): $fileExtension")
-                    transcriptionTextView.append("\nLog: Estensione del file (dedotta dall'URI): $fileExtension")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Estensione del file (dedotta dall'URI): $fileExtension")
+                    }
 
                     val encoding = getEncodingFromMimeType(mimeType, fileExtension)
                     val sampleRateHertz = getSampleRateFromMimeType(mimeType, fileExtension)
                     Log.i("AudioInfo", "Encoding dedotto: $encoding")
-                    transcriptionTextView.append("\nLog: Encoding dedotto: $encoding")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Encoding dedotto: $encoding")
+                    }
                     Log.i("AudioInfo", "Sample Rate dedotto: $sampleRateHertz")
-                    transcriptionTextView.append("\nLog: Sample Rate dedotto: $sampleRateHertz")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Sample Rate dedotto: $sampleRateHertz")
+                    }
 
                     Log.i("GrpcChannel", "Stato di mainChannel prima della creazione dello stub: $mainChannel")
-                    transcriptionTextView.append("\nLog: Stato di mainChannel prima della creazione dello stub: $mainChannel")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Stato di mainChannel prima della creazione dello stub: $mainChannel")
+                    }
                     if (!::mainChannel.isInitialized) {
                         mainChannel = ManagedChannelBuilder.forAddress("speech.googleapis.com", 443)
                             .useTransportSecurity()
                             .build()
                         Log.w("GrpcChannel", "Warning: mainChannel non era inizializzato, inizializzato ora in transcribeAudioFile.")
-                        transcriptionTextView.append("\nLog: Warning: mainChannel non era inizializzato, inizializzato ora in transcribeAudioFile.")
+                        launch(Dispatchers.Main) {
+                            transcriptionTextView.append("\nLog: Warning: mainChannel non era inizializzato, inizializzato ora in transcribeAudioFile.")
+                        }
                     }
 
                     val stub = SpeechGrpc.newBlockingStub(mainChannel)
@@ -195,13 +213,17 @@ class MainActivity : AppCompatActivity() {
                                 metadata.put(apiKeyMetadataKey, API_KEY)
                                 applier.apply(metadata)
                                 Log.i("GrpcCredentials", "Credenziali API applicate alla metadata.")
-                                transcriptionTextView.append("\nLog: Credenziali API applicate alla metadata.")
+                                launch(Dispatchers.Main) {
+                                    transcriptionTextView.append("\nLog: Credenziali API applicate alla metadata.")
+                                }
                             }
 
                             override fun thisUsesUnstableApi() {}
                         })
                     Log.i("GrpcStub", "transcribeAudioFile: Stub gRPC creato.")
-                    transcriptionTextView.append("\nLog: Stub gRPC creato.")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Stub gRPC creato.")
+                    }
 
                     val config = RecognitionConfig.newBuilder()
                         .setEncoding(encoding)
@@ -213,52 +235,70 @@ class MainActivity : AppCompatActivity() {
                         .setUseEnhanced(true)
                         .build()
                     Log.i("SpeechConfig", "RecognitionConfig creata: $config")
-                    transcriptionTextView.append("\nLog: RecognitionConfig creata: $config")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: RecognitionConfig creata: $config")
+                    }
 
                     val audio = RecognitionAudio.newBuilder()
                         .setContent(ByteString.copyFrom(audioData))
                         .build()
                     Log.i("AudioRequest", "transcribeAudioFile: RecognitionAudio creata.")
-                    transcriptionTextView.append("\nLog: RecognitionAudio creata.")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: RecognitionAudio creata.")
+                    }
 
                     val request = LongRunningRecognizeRequest.newBuilder()
                         .setConfig(config)
                         .setAudio(audio)
                         .build()
                     Log.i("SpeechRequest", "LongRunningRecognizeRequest creata: $request")
-                    transcriptionTextView.append("\nLog: LongRunningRecognizeRequest creata: $request")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: LongRunningRecognizeRequest creata: $request")
+                    }
 
                     Log.i("SpeechApiCall", "Chiamata a stub.longRunningRecognize(request)")
-                    transcriptionTextView.append("\nLog: Chiamata a stub.longRunningRecognize(request)...")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Chiamata a stub.longRunningRecognize(request)...")
+                    }
                     val operation = stub.longRunningRecognize(request)
 
                     Log.i("SpeechOperation", "Oggetto Operazione ricevuto: ${operation.name}")
-                    transcriptionTextView.append("\nLog: Oggetto Operazione ricevuto: ${operation.name}")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nLog: Oggetto Operazione ricevuto: ${operation.name}")
+                    }
 
                     if (!operation.name.isNullOrEmpty()) {
                         currentOperationName = operation.name
                         startPollingOperationStatus(operation.name, mainChannel)
                     } else {
                         Log.e("SpeechOperation", "Errore: Nome dell'operazione non valido.")
-                        transcriptionTextView.append("\nErrore: Nome dell'operazione non valido.")
+                        launch(Dispatchers.Main) {
+                            transcriptionTextView.append("\nErrore: Nome dell'operazione non valido.")
+                        }
+                    }
+                } ?: run {
+                    Log.e("LongRunningRecognize", "Errore: Impossibile aprire InputStream per URI condiviso: $uri.")
+                    launch(Dispatchers.Main) {
+                        transcriptionTextView.append("\nErrore: Impossibile aprire InputStream per URI condiviso: $uri.")
                     }
                 }
             } catch (e: IOException) {
-                Log.e("LongRunningRecognize", "Errore durante la trascrizione lunga con Google Cloud (esterno): ${e.localizedMessage}", e)
-                transcriptionTextView.append("\nErrore durante la trascrizione lunga con Google Cloud: ${e.localizedMessage}")
-            } catch (e: Exception) {
-                Log.e("SpeechOperation", "Errore durante la trascrizione: ${e.localizedMessage}", e)
-                transcriptionTextView.append("\nErrore durante la trascrizione: ${e.localizedMessage}")
+                Log.e("LongRunningRecognize", "Errore durante la lettura del file audio condiviso: ${e.localizedMessage}", e)
+                launch(Dispatchers.Main) {
+                    transcriptionTextView.append("\nErrore durante la lettura del file audio condiviso: ${e.localizedMessage}")
+                }
             } finally {
                 Log.i("Transcription", "transcribeAudioFile completato.")
-                transcriptionTextView.append("\ntranscribeAudioFile completato.")
+                launch(Dispatchers.Main) {
+                    transcriptionTextView.append("\ntranscribeAudioFile completato.")
+                }
             }
-            Log.i("Coroutine", "lifecycleScope.launch (Dispatchers.Main) completato.")
-            transcriptionTextView.append("\nlifecycleScope.launch (Dispatchers.Main) completato.")
         }
-        Log.i("Transcription", "transcribeAudioFile completato.")
-        transcriptionTextView.append("\ntranscribeAudioFile completato.")
-    }    private fun getEncodingFromMimeType(mimeType: String?, fileExtension: String?): AudioEncoding {
+        Log.i("Transcription", "transcribeAudioFile completato (fuori coroutine).")
+        transcriptionTextView.append("\ntranscribeAudioFile completato (fuori coroutine).")
+    }
+
+    private fun getEncodingFromMimeType(mimeType: String?, fileExtension: String?): AudioEncoding {
         Log.i("AudioEncoding", "Determinazione encoding per MIME Type: $mimeType, Estensione (iniziale): $fileExtension")
         val extension = fileExtension?.lowercase(Locale.ROOT) ?: audioUri?.path?.substringAfterLast(".")?.lowercase(Locale.ROOT)
         Log.i("AudioEncoding", "Estensione da usare: $extension")
@@ -384,6 +424,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     private fun startPollingOperationStatus(operationName: String, sharedChannel: io.grpc.ManagedChannel?) {
         lifecycleScope.launch(Dispatchers.IO) {
             getOperationStatus(operationName, this, sharedChannel) // Passa il canale condiviso
