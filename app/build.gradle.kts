@@ -1,3 +1,9 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
 android {
     namespace = "com.example.voicetotexttest"
     compileSdk = 35
@@ -10,16 +16,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "SPEECH_TO_TEXT_API_KEY", project.properties["SPEECH_TO_TEXT_API_KEY"] as? String ?: "")
+        buildConfigField("String", "SPEECH_TO_TEXT_API_KEY", project.properties["SPEECH_TO_TEXT_API_KEY"].toString().takeIf { it.isNotBlank() }?.let { "\"$it\"" } ?: "\"\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -31,6 +34,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true // Aggiungi questa linea per abilitare BuildConfig
     }
 
     packagingOptions {
@@ -73,11 +77,4 @@ dependencies {
     implementation(libs.kotlin.coroutines.android)
     implementation(libs.lifecycle.runtime.ktx)
     implementation("androidx.cardview:cardview:1.0.0")
-
 }
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-}
-

@@ -42,7 +42,7 @@ import android.view.View
 //private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 private const val REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION = 112
 private const val REQUEST_AUDIO_PICK = 101 // Puoi usare 100 se non è già definito
-private const val API_KEY = BuildConfig.SPEECH_TO_TEXT_API_KEY
+private val API_KEY = BuildConfig.SPEECH_TO_TEXT_API_KEY
 
 class MainActivity : AppCompatActivity() {
 
