@@ -44,6 +44,7 @@ private const val REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION = 112
 private const val REQUEST_AUDIO_PICK = 101 // Puoi usare 100 se non è già definito
 private val API_KEY = BuildConfig.SPEECH_TO_TEXT_API_KEY
 
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var transcriptionTextView: TextView
@@ -213,6 +214,7 @@ class MainActivity : AppCompatActivity() {
                                     io.grpc.Metadata.Key.of("x-goog-api-key", io.grpc.Metadata.ASCII_STRING_MARSHALLER),
                                     API_KEY
                                 )
+                                Log.d("ApiKeyCheck", "Chiave API applicata alla richiesta (transcribe): $API_KEY") // INSERITO QUI IL LOG TEMPORANEO
                                 applier.apply(metadata)
                                 Log.i("GrpcCredentials", "Credenziali API applicate.")
                             }
@@ -329,6 +331,7 @@ class MainActivity : AppCompatActivity() {
                         io.grpc.Metadata.Key.of("x-goog-api-key", io.grpc.Metadata.ASCII_STRING_MARSHALLER),
                         API_KEY
                     )
+                    Log.d("ApiKeyCheck", "Chiave API applicata alla richiesta (operation): $API_KEY") // INSERITO QUI IL LOG TEMPORANEO
                     applier.apply(metadata)
                     Log.i("GrpcCredentials-Op", "Credenziali API applicate (Operazione).")
                 }
